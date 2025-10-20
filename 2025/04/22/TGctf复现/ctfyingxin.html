@@ -1,1 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        .hidden-player {
+            position: absolute;
+            left: -9999px;
+            width: 1px;
+            height: 1px;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- 点击任意位置触发播放 -->
 
+    <audio class="hidden-player" id="audioPlayer" preload="auto" loop>
+        <source src="/music/Save_the_world.mp3" type="audio/mp3">
+        你的浏览器不支持音频播放。
+    </audio>
+
+    <script>
+        function enableAudio() {
+            const audioPlayer = document.getElementById('audioPlayer');
+            // 开始播放音频
+            audioPlayer.play();
+
+            // 移除点击事件（只需一次交互）
+            document.body.onclick = null;
+        }
+
+        // 用户点击页面时触发播放
+        document.body.onclick = enableAudio;
+    </script>
+</body>
+</html>
